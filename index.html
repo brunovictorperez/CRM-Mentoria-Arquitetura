@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Vértice CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      background-color: #f5f5f7;
+    }
+    .glass {
+      background: rgba(255, 255, 255, 0.82);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+    .card-apple {
+      background: #ffffff;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03), 0 1px 3px rgba(0, 0, 0, 0.02);
+      border: 1px solid rgba(0, 0, 0, 0.04);
+    }
+    .tap-effect:active {
+      transform: scale(0.97);
+      transition: transform 0.1s ease;
+    }
+    /* Hide scrollbar for clean look in phase filters */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="text-neutral-900 pb-28">
+
+  <!-- Toast Container for Notifications -->
+  <div id="toastContainer" class="fixed top-20 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 w-[90%] max-w-sm pointer-events-none"></div>
+
+  <!-- Header Fixo Topo -->
+  <header class="sticky top-0 z-40 glass border-b border-black/5 px-5 py-4">
+    <div class="flex items-center justify-between max-w-lg mx-auto">
+      <div>
+        <span class="text-[11px] font-semibold tracking-wider uppercase text-neutral-400">Mentorias</span>
+        <h1 class="text-xl font-bold tracking-tight text-neutral-900" id="headerTitle">CRM de Vendas</h1>
+      </div>
+      <button onclick="loadAllData()" id="refreshBtn" class="tap-effect flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-medium transition">
+        <svg id="syncIcon" class="w-3.5 h-3.5 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        <span>Sincronizar</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Container Principal -->
+  <main class="max-w-lg mx-auto px-5 pt-4">
+
+    <!-- Status de Carregamento -->
+    <div id="loader" class="py-12 flex flex-col items-center justify-center gap-3">
+      <div class="w-7 h-7 border-2 border-neutral-300 border-t-neutral-800 rounded-full animate-spin"></div>
+      <p class="text-xs text-neutral-400 font-medium">Buscando dados na planilha...</p>
+    </div>
+
+    <!-- VIEW 1: CRM -->
+    <section id="viewCrm" class="space-y-4 hidden">
+      <!-- Métricas Apple Style -->
+      <div class="grid grid-cols-2 gap-3">
+        <div class="card-apple rounded-2xl p-4">
+          <p class="text-[11px] font-medium text-neutral-400">Total de Leads</p>
+          <p class="text-2xl font-bold tracking-tight text-neutral-900 mt-1" id="metricTotalLeads">0</p>
+        </div>
+        <div class="card-apple rounded-2xl p-4">
+          <p class="text-[11px] font-medium text-neutral-400">Em Negociação</p>
+          <p class="text-2xl font-bold tracking-tight text-neutral-900 mt-1 text-emerald-600" id="metricTotalValor">R$ 0</p>
+        </div>
+      </div>
+
+      <!-- Barra de Busca -->
+      <div class="relative">
+        <input 
+          type="text" 
+          id="crmSearch" 
+          placeholder="Buscar por nome..." 
+          oninput="renderCrm()"
+          class="w-full bg-white card-apple rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-black/10 placeholder-neutral-400"
+        />
+      </div>
+
+      <!-- Filtro por Fase (Pills) -->
+      <div class="flex gap-2 overflow-x-auto pb-1 text-xs no-scrollbar" id="phaseFilters">
+        <!-- Renderizado dinamicamente -->
+      </div>
+
+      <!-- Lista de Leads -->
+      <div id="leadsList" class="space-y-3 pt-1">
+        <!-- Cards inseridos via JS -->
+      </div>
+    </section>
+
+    <!-- VIEW 2: ABORDAGENS -->
+    <section id="viewApproaches" class="space-y-4 hidden">
+      <!-- Busca de Abordagens -->
+      <div class="relative">
+        <input 
+          type="text" 
+          id="approachSearch" 
+          placeholder="Buscar nos scripts ou etapas..." 
+          oninput="renderApproaches()"
+          class="w-full bg-white card-apple rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-black/10 placeholder-neutral-400"
+        />
+      </div>
+
+      <!-- Lista de Abordagens -->
+      <div id="approachesList" class="space-y-3">
+        <!-- Cards inseridos via JS -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Bottom Navigation Bar (Estilo iOS) -->
+  <nav class="fixed bottom-0 left-0 right-0 glass border-t border-black/5 py-2 px-6 z-40">
+    <div class="max-w-lg mx-auto flex justify-around items-center">
+      <button onclick="switchTab('crm')" id="tabBtnCrm" class="flex flex-col items-center gap-1 text-neutral-900 py-1 px-4 tap-effect">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+        </svg>
+        <span class="text-[10px] font-semibold tracking-tight">Leads</span>
+      </button>
+
+      <button onclick="switchTab('approaches')" id="tabBtnApproaches" class="flex flex-col items-center gap-1 text-neutral-400 py-1 px-4 tap-effect">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+        </svg>
+        <span class="text-[10px] font-semibold tracking-tight">Abordagens</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Script da Aplicação -->
+  <script>
+    const URL_CRM = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-gebx8RGuyredzgafjRZPYlV1_Z1c_6Ze9b4jp0f4Gmy5gJxpZRqDDCDL3-8LMJdpn0YV7SgmZudb/pub?gid=108971479&single=true&output=csv";
+    const URL_APPROACHES = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-gebx8RGuyredzgafjRZPYlV1_Z1c_6Ze9b4jp0f4Gmy5gJxpZRqDDCDL3-8LMJdpn0YV7SgmZudb/pub?gid=497688042&single=true&output=csv";
+
+    let crmData = [];
+    let approachesData = [];
+    let activePhaseFilter = "Todas";
+    let activeTab = "crm";
+
+    // Custom Toast function to replace alert()
+    function showToast(message, isError = false) {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `${isError ? 'bg-red-500' : 'bg-neutral-800'} text-white px-4 py-3 rounded-xl text-sm font-medium shadow-lg transition-opacity duration-300 opacity-0`;
+      toast.innerText = message;
+      container.appendChild(toast);
+      
+      // Trigger reflow to animate
+      setTimeout(() => { toast.classList.remove('opacity-0'); }, 10);
+      
+      setTimeout(() => {
+        toast.classList.add('opacity-0');
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    async function fetchCsv(url) {
+      const timestampUrl = `${url}&_t=${Date.now()}`;
+      const response = await fetch(timestampUrl);
+      const csvText = await response.text();
+      return new Promise((resolve) => {
+        Papa.parse(csvText, {
+          header: true,
+          skipEmptyLines: true,
+          complete: (results) => resolve(results.data)
+        });
+      });
+    }
+
+    async function loadAllData() {
+      const icon = document.getElementById("syncIcon");
+      icon.classList.add("animate-spin");
+      document.getElementById("loader").classList.remove("hidden");
+
+      try {
+        const [crmRes, approachRes] = await Promise.all([
+          fetchCsv(URL_CRM),
+          fetch(URL_APPROACHES + `&_t=${Date.now()}`).then(r => r.text())
+        ]);
+
+        crmData = crmRes.filter(row => row["Nome do Lead"] && row["Nome do Lead"].trim() !== "");
+        parseApproaches(approachRes);
+
+        document.getElementById("loader").classList.add("hidden");
+        switchTab(activeTab);
+      } catch (err) {
+        console.error(err);
+        showToast("Erro ao carregar dados da planilha. Verifique sua conexão.", true);
+        document.getElementById("loader").classList.add("hidden");
+      } finally {
+        icon.classList.remove("animate-spin");
+      }
+    }
+
+    function parseApproaches(rawCsv) {
+      const lines = rawCsv.split(/\r?\n/).map(l => l.replace(/^"|"$/g, '').trim()).filter(l => l.length > 0);
+      const blocks = [];
+      let currentBlock = null;
+
+      lines.forEach(line => {
+        if (line.toLowerCase().startsWith("formato ") || line.toLowerCase().startsWith("mensagem ") || line.toLowerCase().startsWith("segundo contato") || line.toLowerCase().startsWith("roteiro do áudio")) {
+          if (currentBlock) blocks.push(currentBlock);
+          currentBlock = { title: line, text: "" };
+        } else {
+          if (!currentBlock) {
+            currentBlock = { title: "Introdução", text: line };
+          } else {
+            currentBlock.text += (currentBlock.text ? "\n\n" : "") + line;
+          }
+        }
+      });
+      if (currentBlock) blocks.push(currentBlock);
+      approachesData = blocks;
+    }
+
+    function switchTab(tab) {
+      activeTab = tab;
+      const viewCrm = document.getElementById("viewCrm");
+      const viewApp = document.getElementById("viewApproaches");
+      const btnCrm = document.getElementById("tabBtnCrm");
+      const btnApp = document.getElementById("tabBtnApproaches");
+      const title = document.getElementById("headerTitle");
+
+      if (tab === "crm") {
+        title.innerText = "CRM de Vendas";
+        viewCrm.classList.remove("hidden");
+        viewApp.classList.add("hidden");
+        btnCrm.className = "flex flex-col items-center gap-1 text-neutral-900 py-1 px-4 tap-effect";
+        btnApp.className = "flex flex-col items-center gap-1 text-neutral-400 py-1 px-4 tap-effect";
+        renderCrm();
+      } else {
+        title.innerText = "Abordagens";
+        viewCrm.classList.add("hidden");
+        viewApp.classList.remove("hidden");
+        btnCrm.className = "flex flex-col items-center gap-1 text-neutral-400 py-1 px-4 tap-effect";
+        btnApp.className = "flex flex-col items-center gap-1 text-neutral-900 py-1 px-4 tap-effect";
+        renderApproaches();
+      }
+    }
+
+    function renderCrm() {
+      const searchTerm = document.getElementById("crmSearch").value.toLowerCase();
+      const listEl = document.getElementById("leadsList");
+      const filtersEl = document.getElementById("phaseFilters");
+
+      // Fases disponíveis
+      const phases = ["Todas", ...new Set(crmData.map(d => d["Fase"]).filter(Boolean))];
+      filtersEl.innerHTML = phases.map(phase => `
+        <button 
+          onclick="setPhaseFilter('${phase}')"
+          class="px-3.5 py-1.5 rounded-full font-medium whitespace-nowrap transition tap-effect ${
+            activePhaseFilter === phase 
+            ? 'bg-neutral-900 text-white shadow-sm' 
+            : 'bg-white text-neutral-600 border border-neutral-200/80 hover:bg-neutral-50'
+          }"
+        >
+          ${phase}
+        </button>
+      `).join("");
+
+      // Filtragem
+      const filtered = crmData.filter(item => {
+        const matchesName = (item["Nome do Lead"] || "").toLowerCase().includes(searchTerm);
+        const matchesPhase = activePhaseFilter === "Todas" || item["Fase"] === activePhaseFilter;
+        return matchesName && matchesPhase;
+      });
+
+      // Métricas
+      document.getElementById("metricTotalLeads").innerText = crmData.length;
+      let sum = 0;
+      crmData.forEach(row => {
+        const valStr = (row["Valor"] || "").replace(/[^0-9,-]+/g, "").replace(",", ".");
+        const num = parseFloat(valStr);
+        if (!isNaN(num)) sum += num;
+      });
+      document.getElementById("metricTotalValor").innerText = sum > 0 
+        ? `R$ ${sum.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}`
+        : "R$ 0";
+
+      // Render Cards
+      if (filtered.length === 0) {
+        listEl.innerHTML = `<div class="p-8 text-center text-xs text-neutral-400">Nenhum lead encontrado.</div>`;
+        return;
+      }
+
+      listEl.innerHTML = filtered.map(lead => {
+        const nome = lead["Nome do Lead"] || "Sem Nome";
+        const fase = lead["Fase"] || "Não definida";
+        const valor = lead["Valor"] || "";
+        const call = lead["Data da Call"] || "";
+        const whats = lead["WhatsApp"] || "";
+        const insta = lead["Instagram"] || "";
+
+        return `
+          <div class="card-apple rounded-2xl p-4 space-y-3">
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <h3 class="font-semibold text-neutral-900 text-base leading-tight">${nome}</h3>
+                <span class="inline-block mt-1 text-[11px] font-medium px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-700">
+                  ${fase}
+                </span>
+              </div>
+              ${valor ? `<span class="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">${valor}</span>` : ""}
+            </div>
+
+            ${call ? `
+              <div class="text-[11px] text-neutral-500 flex items-center gap-1.5 pt-0.5">
+                <svg class="w-3.5 h-3.5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                <span>Call: <strong>${call}</strong></span>
+              </div>
+            ` : ""}
+
+            <div class="flex gap-2 pt-1 border-t border-neutral-100">
+              ${whats ? `
+                <a href="${whats}" target="_blank" class="tap-effect flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-neutral-900 text-white text-xs font-medium hover:bg-neutral-800 transition">
+                  <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z"/></svg>
+                  <span>WhatsApp</span>
+                </a>
+              ` : ""}
+              ${insta ? `
+                <a href="${insta}" target="_blank" class="tap-effect flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-neutral-100 text-neutral-800 text-xs font-medium hover:bg-neutral-200 transition">
+                  <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+                  <span>Instagram</span>
+                </a>
+              ` : ""}
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function setPhaseFilter(phase) {
+      activePhaseFilter = phase;
+      renderCrm();
+    }
+
+    function renderApproaches() {
+      const query = document.getElementById("approachSearch").value.toLowerCase();
+      const listEl = document.getElementById("approachesList");
+
+      const filtered = approachesData.filter(item => 
+        item.title.toLowerCase().includes(query) || item.text.toLowerCase().includes(query)
+      );
+
+      if (filtered.length === 0) {
+        listEl.innerHTML = `<div class="p-8 text-center text-xs text-neutral-400">Nenhuma abordagem encontrada.</div>`;
+        return;
+      }
+
+      listEl.innerHTML = filtered.map((item, idx) => {
+        const cleanText = item.text.trim();
+        return `
+          <div class="card-apple rounded-2xl p-4 space-y-3">
+            <div class="flex items-center justify-between gap-2">
+              <h3 class="font-semibold text-neutral-900 text-sm leading-snug">${item.title}</h3>
+              ${cleanText ? `
+                <button 
+                  onclick="copyText(this, ${idx})" 
+                  class="tap-effect text-xs font-medium px-3 py-1 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-800 transition shrink-0"
+                >
+                  Copiar
+                </button>
+              ` : ""}
+            </div>
+            ${cleanText ? `
+              <p class="text-xs text-neutral-600 whitespace-pre-line leading-relaxed bg-neutral-50/80 p-3 rounded-xl border border-black/[0.03]">
+                ${cleanText}
+              </p>
+            ` : ""}
+          </div>
+        `;
+      }).join("");
+    }
+
+    // Updated copy method to ensure it works across browser strict iFrames
+    function copyText(btn, index) {
+      const text = approachesData[index].text;
+      
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      
+      // Make it invisible and append it to body
+      textArea.style.position = "absolute";
+      textArea.style.left = "-9999px";
+      document.body.appendChild(textArea);
+      
+      textArea.select();
+      
+      try {
+        document.execCommand('copy');
+        const originalText = btn.innerText;
+        btn.innerText = "Copiado!";
+        btn.classList.add("bg-emerald-600", "text-white");
+        btn.classList.remove("bg-neutral-100", "text-neutral-800");
+        
+        setTimeout(() => {
+          btn.innerText = originalText;
+          btn.classList.remove("bg-emerald-600", "text-white");
+          btn.classList.add("bg-neutral-100", "text-neutral-800");
+        }, 1800);
+      } catch (err) {
+        console.error("Oops, unable to copy", err);
+        showToast("Falha ao copiar texto.", true);
+      }
+      
+      document.body.removeChild(textArea);
+    }
+
+    // Inicialização automática
+    loadAllData();
+  </script>
+</body>
+</html>
