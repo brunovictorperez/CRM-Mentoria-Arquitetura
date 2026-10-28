@@ -191,8 +191,9 @@
             <select id="fieldFase" class="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-black/10 focus:bg-white">
               <option value="1. Social Selling">1. Social Selling</option>
               <option value="2. Formulario">2. Formulario</option>
-              <option value="3. call agendada">3. call agendada</option>
+              <option value="3. Call agendada">3. Call agendada</option>
               <option value="4. Follow-up">4. Follow-up</option>
+              <option value="-">-</option>
             </select>
           </div>
           <div>
@@ -332,9 +333,15 @@ function doGet(e) {
   let phaseOptions = [];
   const faseColIdx = headers.indexOf("Fase") + 1;
   if (faseColIdx > 0 && sheet.getLastRow() >= 2) {
-    const rule = sheet.getRange(2, faseColIdx).getDataValidation();
-    if (rule && rule.getCriteriaType() === SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST) {
-      phaseOptions = rule.getCriteriaValues()[0] || [];
+    const rules = sheet.getRange(2, faseColIdx, sheet.getLastRow() - 1, 1).getDataValidations();
+    for (let i = 0; i < rules.length; i++) {
+      const rule = rules[i][0];
+      if (rule && rule.getCriteriaType() === SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST) {
+        const vals = rule.getCriteriaValues()[0] || [];
+        if (vals.length > phaseOptions.length) {
+          phaseOptions = vals;
+        }
+      }
     }
   }
 
@@ -412,9 +419,34 @@ function doPost(e) {
     let SHEET_PHASES = [
       "1. Social Selling",
       "2. Formulario",
-      "3. call agendada",
-      "4. Follow-up"
+      "3. Call agendada",
+      "4. Follow-up",
+      "-"
     ];
+
+    // Consolida as opções priorizando exatamente a lista de validação da planilha
+    // e evitando duplicatas quando uma fase teve apenas letra maiúscula/minúscula corrigida
+    function getNormalizedPhaseOptions() {
+      const map = new Map();
+      SHEET_PHASES.forEach(opt => {
+        const trimmed = String(opt || "").trim();
+        if (trimmed) map.set(trimmed.toLowerCase(), trimmed);
+      });
+      crmData.forEach(d => {
+        const trimmed = String(d["Fase"] || "").trim();
+        if (trimmed && !map.has(trimmed.toLowerCase())) {
+          map.set(trimmed.toLowerCase(), trimmed);
+        }
+      });
+      return Array.from(map.values());
+    }
+
+    function normalizePhaseName(phase) {
+      const trimmed = String(phase || "").trim();
+      if (!trimmed) return "-";
+      const match = SHEET_PHASES.find(opt => opt.trim().toLowerCase() === trimmed.toLowerCase());
+      return match || trimmed;
+    }
 
     // Estilização fiel às cores dos chips da planilha
     function getPhaseStyle(phase) {
@@ -443,6 +475,12 @@ function doPost(e) {
           dot: "bg-[#f7a96c]"
         };
       }
+      if (p === "-") {
+        return {
+          pill: "bg-[#e5e5e5] text-[#3c4043] border border-[#d5d5d5]",
+          dot: "bg-[#9aa0a6]"
+        };
+      }
       return {
         pill: "bg-neutral-100 text-neutral-700 border border-neutral-200",
         dot: "bg-neutral-400"
@@ -452,8 +490,8 @@ function doPost(e) {
     function syncPhaseSelectOptions() {
       const selectEl = document.getElementById("fieldFase");
       if (!selectEl) return;
-      const currentVal = selectEl.value;
-      const allOptions = [...new Set([...SHEET_PHASES, ...crmData.map(d => d["Fase"]).filter(Boolean)])];
+      const currentVal = normalizePhaseName(selectEl.value);
+      const allOptions = getNormalizedPhaseOptions();
       selectEl.innerHTML = allOptions.map(opt => `<option value="${opt}">${opt}</option>`).join("");
       if (currentVal && allOptions.includes(currentVal)) {
         selectEl.value = currentVal;
@@ -468,9 +506,9 @@ function doPost(e) {
       }
     });
 
-    // Tenta recuperar URL configurada na sessão
+    // Tenta recuperar URL configurada no localStorage ou sessionStorage
     try {
-      const savedUrl = window.sessionStorage.getItem("vertice_gas_url");
+      const savedUrl = window.localStorage.getItem("vertice_gas_url") || window.sessionStorage.getItem("vertice_gas_url");
       if (savedUrl) GOOGLE_SCRIPT_URL = savedUrl;
     } catch (e) {}
 
@@ -652,16 +690,13 @@ function doPost(e) {
 
         document.getElementById("loader").classList.add("hidden");
         updateSyncBadge();
-        if (activeTab === "crm") {
-          renderCrm();
-        } else {
-          renderApproaches();
-        }
+        switchTab(activeTab);
         if (!silent) showToast("Dados sincronizados com a planilha!");
       } catch (err) {
         console.error(err);
         if (!silent) showToast("Erro ao carregar dados da planilha. Verifique sua conexão.", true);
         document.getElementById("loader").classList.add("hidden");
+        switchTab(activeTab);
       } finally {
         icon.classList.remove("animate-spin");
       }
@@ -771,8 +806,11 @@ function doPost(e) {
       const listEl = document.getElementById("leadsList");
       const filtersEl = document.getElementById("phaseFilters");
 
-      // Fases disponíveis
-      const phases = ["Todas", ...new Set(crmData.map(d => d["Fase"]).filter(Boolean))];
+      // Lista oficial e normalizada das fases do menu suspenso da planilha
+      const allPhaseOptions = getNormalizedPhaseOptions();
+
+      // Fases disponíveis nos filtros do topo
+      const phases = ["Todas", ...allPhaseOptions];
       filtersEl.innerHTML = phases.map(phase => `
         <button 
           onclick="setPhaseFilter('${phase.replace(/'/g, "\\'")}')"
@@ -786,12 +824,13 @@ function doPost(e) {
         </button>
       `).join("");
 
-      // Filtragem por Nome, Status ou Fase
+      // Filtragem por Nome, Status ou Fase (ignorando diferenças de maiúsculas/minúsculas na fase)
       const filtered = crmData.filter(item => {
         const matchesSearch = 
           String(item["Nome do Lead"] || "").toLowerCase().includes(searchTerm) ||
           String(item["Status / Desfecho"] || "").toLowerCase().includes(searchTerm);
-        const matchesPhase = activePhaseFilter === "Todas" || item["Fase"] === activePhaseFilter;
+        const itemPhaseNorm = normalizePhaseName(item["Fase"]);
+        const matchesPhase = activePhaseFilter === "Todas" || itemPhaseNorm.toLowerCase() === activePhaseFilter.toLowerCase();
         return matchesSearch && matchesPhase;
       });
 
@@ -813,14 +852,11 @@ function doPost(e) {
         return;
       }
 
-      // Lista das fases do menu suspenso da planilha
-      const allPhaseOptions = [...new Set([...SHEET_PHASES, ...crmData.map(d => d["Fase"]).filter(Boolean)])];
-
       listEl.innerHTML = filtered.map((lead) => {
         const dataIdx = crmData.indexOf(lead);
         const dataEntrada = lead["Data de Entrada"] || "";
         const nome = lead["Nome do Lead"] || "Sem Nome";
-        const fase = lead["Fase"] || SHEET_PHASES[0];
+        const fase = normalizePhaseName(lead["Fase"]);
         const phaseStyle = getPhaseStyle(fase);
         const valor = lead["Valor"] || "";
         const call = lead["Data da Call"] || "";
@@ -858,7 +894,7 @@ function doPost(e) {
                           Fase da Planilha
                         </div>
                         ${allPhaseOptions.map(opt => {
-                          const isCurrent = opt === fase;
+                          const isCurrent = opt.toLowerCase() === fase.toLowerCase();
                           const optStyle = getPhaseStyle(opt);
                           const safeOpt = opt.replace(/'/g, "\\'");
                           return `
@@ -1080,7 +1116,7 @@ function doPost(e) {
         document.getElementById("fieldNome").value = lead["Nome do Lead"] || "";
         document.getElementById("fieldWhats").value = lead["WhatsApp"] || "";
         document.getElementById("fieldInsta").value = lead["Instagram"] || "";
-        document.getElementById("fieldFase").value = lead["Fase"] || SHEET_PHASES[0];
+        document.getElementById("fieldFase").value = normalizePhaseName(lead["Fase"]);
         document.getElementById("fieldDataCall").value = lead["Data da Call"] || "";
         document.getElementById("fieldStatus").value = lead["Status / Desfecho"] || "";
         document.getElementById("fieldValor").value = lead["Valor"] || "";
@@ -1194,6 +1230,7 @@ function doPost(e) {
       const val = document.getElementById("scriptUrlInput").value.trim();
       GOOGLE_SCRIPT_URL = val;
       try {
+        window.localStorage.setItem("vertice_gas_url", val);
         window.sessionStorage.setItem("vertice_gas_url", val);
       } catch (e) {}
       updateSyncBadge();
